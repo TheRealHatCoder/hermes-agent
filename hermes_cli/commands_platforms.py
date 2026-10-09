@@ -186,26 +186,31 @@ def _prioritize_telegram_menu_candidates(
 def _iter_gateway_skills(platform: str):
     """Yield ``(cmd_key, info, rel_parts)`` for skills eligible as gateway slash commands.
 
-    Scan roots: ``SKILLS_DIR`` plus ``skills.external_dirs`` / trusted project skills dirs;
-    anything elsewhere or under ``SKILLS_DIR/.hub`` is skipped, as are skills disabled for
-    *platform*. Paths are resolved on both sides (symlinked roots still match) and matched per
-    path component (``/my-skills`` never admits ``/my-skills-extra``). ``rel_parts`` is the skill
-    dir relative to its root (``("creative", "ascii-art")``). Alphabetical so first-wins
-    collision handling is deterministic.
+    Scan roots: the *active profile's* skills dir (``tools.skills_tool._skills_dir()``) plus
+    ``skills.external_dirs`` / trusted project skills dirs; anything elsewhere or under
+    ``<skills dir>/.hub`` is skipped, as are skills disabled for *platform*. Paths are resolved on
+    both sides (symlinked roots still match) and matched per path component (``/my-skills`` never
+    admits ``/my-skills-extra``). ``rel_parts`` is the skill dir relative to its root
+    (``("creative", "ascii-art")``). Alphabetical so first-wins collision handling is deterministic.
     """
     from pathlib import Path
 
     from agent.skill_commands import get_skill_commands
     from agent.skill_utils import (
         get_disabled_skill_names, get_external_skills_dirs, get_project_skills_dirs)
-    from tools.skills_tool import SKILLS_DIR
+    from tools import skills_tool as _skills_tool
 
     try:
         disabled = get_disabled_skill_names(platform=platform)
     except Exception:
         disabled = set()
-    hub_dir = (SKILLS_DIR / ".hub").resolve()
-    roots = [SKILLS_DIR.resolve()]
+    # _skills_dir(), never the module-level SKILLS_DIR constant: the constant freezes the home that
+    # was active when tools.skills_tool was imported (the default root), so in a multiplexed gateway
+    # every profile-scoped corpus (profiles/<p>/skills/...) fails the is_relative_to(root) test below
+    # and the profile's own commands never reach its menu (#67277 pattern, same as agent/skill_utils).
+    skills_dir = _skills_tool._skills_dir()
+    hub_dir = (skills_dir / ".hub").resolve()
+    roots = [skills_dir.resolve()]
     for getter in (get_external_skills_dirs, get_project_skills_dirs):
         try:
             for d in getter():
